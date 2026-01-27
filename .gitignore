@@ -2,6 +2,9 @@
 /target/
 /dist-wasm/
 
+# Reference documentation (local copy)
+/docs/repos/reinhardt-web/
+
 # IDE
 .idea/
 .vscode/
