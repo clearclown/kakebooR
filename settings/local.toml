@@ -1,0 +1,23 @@
+# Local Development Settings for kakeboor
+#
+# This file contains settings specific to local development environment.
+
+# Enable debug mode for development
+debug = true
+
+# Secret key for development (NEVER use this in production!)
+secret_key = "local-development-secret-key-change-in-production"
+
+# Allow all hosts in development
+allowed_hosts = ["*"]
+
+# Static files configuration for development
+static_url = "/static/"
+staticfiles_dirs = ["static"]
+
+# Database configuration for local development (SQLite for simplicity)
+[databases.default]
+engine = "sqlite"
+name = "db.sqlite3"
+
+[databases.default.options]

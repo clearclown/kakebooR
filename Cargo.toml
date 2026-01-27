@@ -1,0 +1,74 @@
+[package]
+name = "kakeboor"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # cdylib for WASM, rlib for server
+
+[[bin]]
+name = "manage"
+path = "src/bin/manage.rs"
+
+[[bin]]
+name = "runserver"
+path = "src/bin/runserver.rs"
+
+# Common dependencies (both WASM and server)
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reinhardt-pages = { path = "docs/repos/reinhardt-web/crates/reinhardt-pages", features = ["chrono"] }
+reinhardt-core = { path = "docs/repos/reinhardt-web/crates/reinhardt-core", features = ["types", "reactive", "page"] }
+wasm-bindgen = "0.2.106"
+wasm-bindgen-futures = "0.4.56"
+web-sys = { version = "0.3.83", features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlFormElement",
+    "HtmlInputElement",
+    "Event",
+    "EventTarget",
+    "console",
+    "Location",
+    "History",
+] }
+console_error_panic_hook = "0.1"
+gloo-net = "0.6"
+chrono = { version = "0.4", features = ["serde", "wasmbind"] }
+
+# Server-specific dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reinhardt-core = { path = "docs/repos/reinhardt-web/crates/reinhardt-core", features = ["types"] }
+reinhardt-http = { path = "docs/repos/reinhardt-web/crates/reinhardt-http" }
+reinhardt-server = { path = "docs/repos/reinhardt-web/crates/reinhardt-server" }
+reinhardt-urls = { path = "docs/repos/reinhardt-web/crates/reinhardt-urls" }
+reinhardt-views = { path = "docs/repos/reinhardt-web/crates/reinhardt-views" }
+reinhardt-di = { path = "docs/repos/reinhardt-web/crates/reinhardt-di", features = ["params"] }
+reinhardt-conf = { path = "docs/repos/reinhardt-web/crates/reinhardt-conf" }
+reinhardt-commands = { path = "docs/repos/reinhardt-web/crates/reinhardt-commands", features = ["sqlite"] }
+reinhardt-db = { path = "docs/repos/reinhardt-web/crates/reinhardt-db", features = ["sqlite", "orm", "migrations"] }
+reinhardt-rest = { path = "docs/repos/reinhardt-web/crates/reinhardt-rest", features = ["serializers", "pagination", "filters"] }
+reinhardt-macros = { path = "docs/repos/reinhardt-web/crates/reinhardt-core/macros" }
+reinhardt-routers-macros = { path = "docs/repos/reinhardt-web/crates/reinhardt-urls/routers-macros" }
+reinhardt-pages = { path = "docs/repos/reinhardt-web/crates/reinhardt-pages", features = ["chrono"] }
+reinhardt-utils = { path = "docs/repos/reinhardt-web/crates/reinhardt-utils", features = ["static"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.0", features = ["full"] }
+validator = { version = "0.20", features = ["derive"] }
+thiserror = "2.0"
+async-trait = "0.1"
+inventory = "0.3"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+hyper = "1.0"
+
+[build-dependencies]
+cfg_aliases = "0.2"
+
+[features]
+default = ["client-router"]
+client-router = []
