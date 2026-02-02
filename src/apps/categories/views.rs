@@ -1,71 +1,53 @@
 //! Category views (API endpoints)
 
-use reinhardt_http::{Request, Response, Result};
+use reinhardt::core::serde::json;
+use reinhardt::http::ViewResult;
+use reinhardt::{delete, get, post, put, Json, Path, Response, StatusCode};
 use validator::Validate;
 
-use super::models::{get_all_categories, get_category_by_id, create_category, update_category, delete_category};
-use super::serializers::{CreateCategoryRequest, UpdateCategoryRequest, CategoryResponse, CategoryListResponse};
+use super::models::{
+    create_category, delete_category, get_all_categories, get_category_by_id, update_category,
+};
+use super::serializers::{
+    CategoryListResponse, CategoryResponse, CreateCategoryRequest, UpdateCategoryRequest,
+};
 
 /// List all categories
 ///
-/// GET /api/categories/
-pub async fn list_categories(_req: Request) -> Result<Response> {
+/// GET /categories/
+#[get("/", name = "categories_list")]
+pub async fn list_categories() -> ViewResult<Response> {
     let categories = get_all_categories();
     let response = CategoryListResponse::new(categories);
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
 
-    Ok(Response::ok()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
 }
 
 /// Get a single category by ID
 ///
-/// GET /api/categories/{id}/
-pub async fn get_category(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
+/// GET /categories/{id}/
+#[get("/{id}/", name = "categories_get")]
+pub async fn get_category(Path(id): Path<i64>) -> ViewResult<Response> {
     match get_category_by_id(id) {
         Some(category) => {
             let response: CategoryResponse = category.into();
-            let json = serde_json::to_string(&response)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::ok()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
+            Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
         }
-        None => {
-            let error = serde_json::json!({"error": "Category not found"});
-            let json = serde_json::to_string(&error)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::not_found()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
-        }
+        None => Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Category with id {} not found"}}"#, id).into_bytes(),
+        )),
     }
 }
 
 /// Create a new category
 ///
-/// POST /api/categories/
-pub async fn create_category_view(req: Request) -> Result<Response> {
-    // Parse request body using built-in json() method
-    let create_req: CreateCategoryRequest = req.json()?;
-
+/// POST /categories/
+#[post("/", name = "categories_create")]
+pub async fn create_category_view(
+    Json(create_req): Json<CreateCategoryRequest>,
+) -> ViewResult<Response> {
     // Validate request
-    if let Err(errors) = create_req.validate() {
-        let error = serde_json::json!({"error": "Validation failed", "details": errors.to_string()});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        return Ok(Response::bad_request()
-            .with_header("Content-Type", "application/json")
-            .with_body(json));
-    }
+    create_req.validate()?;
 
     // Create category
     let category = create_category(
@@ -76,76 +58,43 @@ pub async fn create_category_view(req: Request) -> Result<Response> {
     );
 
     let response: CategoryResponse = category.into();
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
 
-    Ok(Response::created()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::CREATED).with_body(json::to_vec(&response)?))
 }
 
 /// Update an existing category
 ///
-/// PUT /api/categories/{id}/
-pub async fn update_category_view(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
-    // Parse request body using built-in json() method
-    let update_req: UpdateCategoryRequest = req.json()?;
-
+/// PUT /categories/{id}/
+#[put("/{id}/", name = "categories_update")]
+pub async fn update_category_view(
+    Path(id): Path<i64>,
+    Json(update_req): Json<UpdateCategoryRequest>,
+) -> ViewResult<Response> {
     // Validate request
-    if let Err(errors) = update_req.validate() {
-        let error = serde_json::json!({"error": "Validation failed", "details": errors.to_string()});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        return Ok(Response::bad_request()
-            .with_header("Content-Type", "application/json")
-            .with_body(json));
-    }
+    update_req.validate()?;
 
     // Update category
     match update_category(id, update_req.name, update_req.icon, update_req.color) {
         Some(category) => {
             let response: CategoryResponse = category.into();
-            let json = serde_json::to_string(&response)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::ok()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
+            Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
         }
-        None => {
-            let error = serde_json::json!({"error": "Category not found"});
-            let json = serde_json::to_string(&error)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::not_found()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
-        }
+        None => Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Category with id {} not found"}}"#, id).into_bytes(),
+        )),
     }
 }
 
 /// Delete a category
 ///
-/// DELETE /api/categories/{id}/
-pub async fn delete_category_view(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
+/// DELETE /categories/{id}/
+#[delete("/{id}/", name = "categories_delete")]
+pub async fn delete_category_view(Path(id): Path<i64>) -> ViewResult<Response> {
     if delete_category(id) {
-        Ok(Response::no_content())
+        Ok(Response::new(StatusCode::NO_CONTENT).with_body(Vec::new()))
     } else {
-        let error = serde_json::json!({"error": "Category not found"});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        Ok(Response::not_found()
-            .with_header("Content-Type", "application/json")
-            .with_body(json))
+        Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Category with id {} not found"}}"#, id).into_bytes(),
+        ))
     }
 }

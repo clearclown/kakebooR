@@ -5,4 +5,3 @@
 pub mod categories;
 pub mod transactions;
 pub mod reports;
-pub mod static_files;

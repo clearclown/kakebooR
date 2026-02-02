@@ -2,9 +2,10 @@
 //!
 //! Starts the HTTP server for local development.
 
+use kakeboor::{get_settings, url_patterns};
+use reinhardt::core::tokio;
+use reinhardt::server::serve;
 use std::net::SocketAddr;
-use kakeboor::get_settings;
-use kakeboor::url_patterns;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +24,7 @@ async fn main() {
     println!("Quit the server with CONTROL-C.");
 
     // Run the server
-    if let Err(e) = reinhardt_server::server::serve(addr, router).await {
+    if let Err(e) = serve(addr, router).await {
         eprintln!("Server error: {}", e);
         std::process::exit(1);
     }

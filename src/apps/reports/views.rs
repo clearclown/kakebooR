@@ -1,29 +1,46 @@
 //! Report views (API endpoints)
 
-use reinhardt_http::{Request, Response, Result};
+use chrono::Datelike;
+use reinhardt::core::serde::json;
+use reinhardt::http::ViewResult;
+use reinhardt::{get, Query, Response, StatusCode};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::apps::categories::models::get_all_categories;
 use crate::apps::transactions::models::{get_all_transactions, TransactionType};
 use super::serializers::{
-    MonthlyReportResponse, YearlyReportResponse, CategoryReportResponse,
-    CategorySummary, MonthlySummary,
+    CategoryReportResponse, CategorySummary, MonthlyReportResponse, MonthlySummary,
+    YearlyReportResponse,
 };
+
+/// Query parameters for monthly report
+#[derive(Debug, Deserialize)]
+pub struct MonthlyReportQuery {
+    pub year: Option<i32>,
+    pub month: Option<u32>,
+}
+
+/// Query parameters for yearly report
+#[derive(Debug, Deserialize)]
+pub struct YearlyReportQuery {
+    pub year: Option<i32>,
+}
+
+/// Query parameters for category report
+#[derive(Debug, Deserialize)]
+pub struct CategoryReportQuery {
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+}
 
 /// Get monthly report
 ///
-/// GET /api/reports/monthly/?year=2026&month=1
-pub async fn monthly_report(req: Request) -> Result<Response> {
-    // Parse query parameters
-    let year: i32 = req.query_params
-        .get("year")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| chrono::Utc::now().year());
-
-    let month: u32 = req.query_params
-        .get("month")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| chrono::Utc::now().month());
+/// GET /reports/monthly/?year=2026&month=1
+#[get("/monthly/", name = "reports_monthly")]
+pub async fn monthly_report(Query(params): Query<MonthlyReportQuery>) -> ViewResult<Response> {
+    let year = params.year.unwrap_or_else(|| chrono::Utc::now().year());
+    let month = params.month.unwrap_or_else(|| chrono::Utc::now().month());
 
     let transactions = get_all_transactions();
     let categories = get_all_categories();
@@ -55,7 +72,7 @@ pub async fn monthly_report(req: Request) -> Result<Response> {
         .map(|t| t.amount)
         .sum();
 
-    // Group by category for income
+    // Group by category
     let mut income_by_category: HashMap<i64, (i64, i32)> = HashMap::new();
     let mut expense_by_category: HashMap<i64, (i64, i32)> = HashMap::new();
 
@@ -73,7 +90,10 @@ pub async fn monthly_report(req: Request) -> Result<Response> {
         .into_iter()
         .map(|(cat_id, (amount, count))| CategorySummary {
             category_id: cat_id,
-            category_name: category_names.get(&cat_id).cloned().unwrap_or_else(|| "Unknown".to_string()),
+            category_name: category_names
+                .get(&cat_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()),
             total_amount: amount,
             transaction_count: count,
         })
@@ -83,7 +103,10 @@ pub async fn monthly_report(req: Request) -> Result<Response> {
         .into_iter()
         .map(|(cat_id, (amount, count))| CategorySummary {
             category_id: cat_id,
-            category_name: category_names.get(&cat_id).cloned().unwrap_or_else(|| "Unknown".to_string()),
+            category_name: category_names
+                .get(&cat_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()),
             total_amount: amount,
             transaction_count: count,
         })
@@ -99,22 +122,15 @@ pub async fn monthly_report(req: Request) -> Result<Response> {
         expense_by_category: expense_summary,
     };
 
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-
-    Ok(Response::ok()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
 }
 
 /// Get yearly report
 ///
-/// GET /api/reports/yearly/?year=2026
-pub async fn yearly_report(req: Request) -> Result<Response> {
-    let year: i32 = req.query_params
-        .get("year")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| chrono::Utc::now().year());
+/// GET /reports/yearly/?year=2026
+#[get("/yearly/", name = "reports_yearly")]
+pub async fn yearly_report(Query(params): Query<YearlyReportQuery>) -> ViewResult<Response> {
+    let year = params.year.unwrap_or_else(|| chrono::Utc::now().year());
 
     let transactions = get_all_transactions();
 
@@ -172,20 +188,16 @@ pub async fn yearly_report(req: Request) -> Result<Response> {
         monthly_summary,
     };
 
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-
-    Ok(Response::ok()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
 }
 
 /// Get report by category
 ///
-/// GET /api/reports/by-category/?start_date=2026-01-01&end_date=2026-01-31
-pub async fn by_category_report(req: Request) -> Result<Response> {
-    let start_date = req.query_params.get("start_date").cloned();
-    let end_date = req.query_params.get("end_date").cloned();
+/// GET /reports/by-category/?start_date=2026-01-01&end_date=2026-01-31
+#[get("/by-category/", name = "reports_by_category")]
+pub async fn by_category_report(Query(params): Query<CategoryReportQuery>) -> ViewResult<Response> {
+    let start_date = params.start_date;
+    let end_date = params.end_date;
 
     let transactions = get_all_transactions();
     let categories = get_all_categories();
@@ -200,12 +212,14 @@ pub async fn by_category_report(req: Request) -> Result<Response> {
     let filtered_transactions: Vec<_> = transactions
         .iter()
         .filter(|t| {
-            let in_range_start = start_date.as_ref()
+            let in_range_start = start_date
+                .as_ref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
                 .map(|d| t.transaction_date >= d)
                 .unwrap_or(true);
 
-            let in_range_end = end_date.as_ref()
+            let in_range_end = end_date
+                .as_ref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
                 .map(|d| t.transaction_date <= d)
                 .unwrap_or(true);
@@ -219,7 +233,9 @@ pub async fn by_category_report(req: Request) -> Result<Response> {
 
     for t in &filtered_transactions {
         let is_income = matches!(t.transaction_type, TransactionType::Income);
-        let entry = category_totals.entry(t.category_id).or_insert((0, 0, is_income));
+        let entry = category_totals
+            .entry(t.category_id)
+            .or_insert((0, 0, is_income));
         entry.0 += t.amount;
         entry.1 += 1;
     }
@@ -228,7 +244,10 @@ pub async fn by_category_report(req: Request) -> Result<Response> {
         .into_iter()
         .map(|(cat_id, (amount, count, _))| CategorySummary {
             category_id: cat_id,
-            category_name: category_names.get(&cat_id).cloned().unwrap_or_else(|| "Unknown".to_string()),
+            category_name: category_names
+                .get(&cat_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()),
             total_amount: amount,
             transaction_count: count,
         })
@@ -254,13 +273,5 @@ pub async fn by_category_report(req: Request) -> Result<Response> {
         total_expense,
     };
 
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-
-    Ok(Response::ok()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
 }
-
-// Use chrono traits
-use chrono::Datelike;

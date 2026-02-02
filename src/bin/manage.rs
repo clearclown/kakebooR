@@ -1,14 +1,9 @@
 //! Reinhardt Project Management CLI for kakeboor
 //!
 //! This is the project-specific management command interface (equivalent to Django's manage.py).
-//!
-//! ## Router Registration
-//!
-//! URL patterns are automatically registered by the framework.
-//! No manual registration is required - see `src/config/urls.rs` for the
-//! `#[routes]` attribute macro that enables this.
 
-use reinhardt_commands::execute_from_command_line;
+use reinhardt::commands::execute_from_command_line;
+use reinhardt::core::tokio;
 use std::process;
 
 #[tokio::main]
@@ -19,8 +14,7 @@ async fn main() {
         std::env::set_var("REINHARDT_SETTINGS_MODULE", "kakeboor.config.settings");
     }
 
-    // Router registration happens automatically inside execute_from_command_line()
-    // via the #[routes] attribute macro in src/config/urls.rs
+    // Execute command from command line
     if let Err(e) = execute_from_command_line().await {
         eprintln!("Error: {}", e);
         process::exit(1);

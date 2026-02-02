@@ -1,77 +1,54 @@
 //! Transaction views (API endpoints)
 
-use reinhardt_http::{Request, Response, Result};
+use reinhardt::core::serde::json;
+use reinhardt::http::ViewResult;
+use reinhardt::{delete, get, post, put, Json, Path, Response, StatusCode};
 use validator::Validate;
 
 use super::models::{
-    get_all_transactions, get_transaction_by_id, create_transaction,
-    update_transaction, delete_transaction,
+    create_transaction, delete_transaction, get_all_transactions, get_transaction_by_id,
+    update_transaction,
 };
 use super::serializers::{
-    CreateTransactionRequest, UpdateTransactionRequest,
-    TransactionResponse, TransactionListResponse,
+    CreateTransactionRequest, TransactionListResponse, TransactionResponse, UpdateTransactionRequest,
 };
 
 /// List all transactions
 ///
-/// GET /api/transactions/
-pub async fn list_transactions(_req: Request) -> Result<Response> {
+/// GET /transactions/
+#[get("/", name = "transactions_list")]
+pub async fn list_transactions() -> ViewResult<Response> {
     let transactions = get_all_transactions();
     let response = TransactionListResponse::new(transactions);
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
 
-    Ok(Response::ok()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
 }
 
 /// Get a single transaction by ID
 ///
-/// GET /api/transactions/{id}/
-pub async fn get_transaction(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
+/// GET /transactions/{id}/
+#[get("/{id}/", name = "transactions_get")]
+pub async fn get_transaction(Path(id): Path<i64>) -> ViewResult<Response> {
     match get_transaction_by_id(id) {
         Some(transaction) => {
             let response: TransactionResponse = transaction.into();
-            let json = serde_json::to_string(&response)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::ok()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
+            Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
         }
-        None => {
-            let error = serde_json::json!({"error": "Transaction not found"});
-            let json = serde_json::to_string(&error)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::not_found()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
-        }
+        None => Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Transaction with id {} not found"}}"#, id).into_bytes(),
+        )),
     }
 }
 
 /// Create a new transaction
 ///
-/// POST /api/transactions/
-pub async fn create_transaction_view(req: Request) -> Result<Response> {
-    // Parse request body using built-in json() method
-    let create_req: CreateTransactionRequest = req.json()?;
-
+/// POST /transactions/
+#[post("/", name = "transactions_create")]
+pub async fn create_transaction_view(
+    Json(create_req): Json<CreateTransactionRequest>,
+) -> ViewResult<Response> {
     // Validate request
-    if let Err(errors) = create_req.validate() {
-        let error = serde_json::json!({"error": "Validation failed", "details": errors.to_string()});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        return Ok(Response::bad_request()
-            .with_header("Content-Type", "application/json")
-            .with_body(json));
-    }
+    create_req.validate()?;
 
     // Create transaction
     let transaction = create_transaction(
@@ -83,36 +60,20 @@ pub async fn create_transaction_view(req: Request) -> Result<Response> {
     );
 
     let response: TransactionResponse = transaction.into();
-    let json = serde_json::to_string(&response)
-        .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
 
-    Ok(Response::created()
-        .with_header("Content-Type", "application/json")
-        .with_body(json))
+    Ok(Response::new(StatusCode::CREATED).with_body(json::to_vec(&response)?))
 }
 
 /// Update an existing transaction
 ///
-/// PUT /api/transactions/{id}/
-pub async fn update_transaction_view(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
-    // Parse request body using built-in json() method
-    let update_req: UpdateTransactionRequest = req.json()?;
-
+/// PUT /transactions/{id}/
+#[put("/{id}/", name = "transactions_update")]
+pub async fn update_transaction_view(
+    Path(id): Path<i64>,
+    Json(update_req): Json<UpdateTransactionRequest>,
+) -> ViewResult<Response> {
     // Validate request
-    if let Err(errors) = update_req.validate() {
-        let error = serde_json::json!({"error": "Validation failed", "details": errors.to_string()});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        return Ok(Response::bad_request()
-            .with_header("Content-Type", "application/json")
-            .with_body(json));
-    }
+    update_req.validate()?;
 
     // Update transaction
     match update_transaction(
@@ -124,41 +85,24 @@ pub async fn update_transaction_view(req: Request) -> Result<Response> {
     ) {
         Some(transaction) => {
             let response: TransactionResponse = transaction.into();
-            let json = serde_json::to_string(&response)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::ok()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
+            Ok(Response::new(StatusCode::OK).with_body(json::to_vec(&response)?))
         }
-        None => {
-            let error = serde_json::json!({"error": "Transaction not found"});
-            let json = serde_json::to_string(&error)
-                .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-            Ok(Response::not_found()
-                .with_header("Content-Type", "application/json")
-                .with_body(json))
-        }
+        None => Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Transaction with id {} not found"}}"#, id).into_bytes(),
+        )),
     }
 }
 
 /// Delete a transaction
 ///
-/// DELETE /api/transactions/{id}/
-pub async fn delete_transaction_view(req: Request) -> Result<Response> {
-    let id: i64 = req.path_params
-        .get("id")
-        .ok_or_else(|| reinhardt_core::exception::Error::ParseError("Missing id parameter".to_string()))?
-        .parse()
-        .map_err(|_| reinhardt_core::exception::Error::ParseError("Invalid id format".to_string()))?;
-
+/// DELETE /transactions/{id}/
+#[delete("/{id}/", name = "transactions_delete")]
+pub async fn delete_transaction_view(Path(id): Path<i64>) -> ViewResult<Response> {
     if delete_transaction(id) {
-        Ok(Response::no_content())
+        Ok(Response::new(StatusCode::NO_CONTENT).with_body(Vec::new()))
     } else {
-        let error = serde_json::json!({"error": "Transaction not found"});
-        let json = serde_json::to_string(&error)
-            .map_err(|e| reinhardt_core::exception::Error::Internal(e.to_string()))?;
-        Ok(Response::not_found()
-            .with_header("Content-Type", "application/json")
-            .with_body(json))
+        Ok(Response::new(StatusCode::NOT_FOUND).with_body(
+            format!(r#"{{"error": "Transaction with id {} not found"}}"#, id).into_bytes(),
+        ))
     }
 }
