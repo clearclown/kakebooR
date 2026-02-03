@@ -13,7 +13,12 @@ path = "src/bin/runserver.rs"
 
 [dependencies]
 # Main Reinhardt framework - use unified crate instead of sub-crates
-reinhardt = { path = "docs/repos/reinhardt-web", package = "reinhardt-web", default-features = false, features = ["minimal", "conf", "commands", "db-sqlite"] }
+reinhardt = { path = "docs/repos/reinhardt-web", package = "reinhardt-web", default-features = false, features = ["minimal", "conf", "commands", "database", "db-sqlite"] }
+
+# Required for model registration macros
+linkme = "0.3"
+inventory = "0.3"
+ctor = "0.6"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

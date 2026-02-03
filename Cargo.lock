@@ -2289,6 +2289,9 @@ name = "kakeboor"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ctor",
+ "inventory",
+ "linkme",
  "reinhardt-web",
  "serde",
  "serde_json",

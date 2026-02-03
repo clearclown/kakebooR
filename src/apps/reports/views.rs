@@ -3,12 +3,13 @@
 use chrono::Datelike;
 use reinhardt::core::serde::json;
 use reinhardt::http::ViewResult;
+use reinhardt::Model;
 use reinhardt::{get, Query, Response, StatusCode};
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use crate::apps::categories::models::get_all_categories;
-use crate::apps::transactions::models::{get_all_transactions, TransactionType};
+use crate::apps::categories::models::Category;
+use crate::apps::transactions::models::{Transaction, TransactionType};
 use super::serializers::{
     CategoryReportResponse, CategorySummary, MonthlyReportResponse, MonthlySummary,
     YearlyReportResponse,
@@ -42,13 +43,14 @@ pub async fn monthly_report(Query(params): Query<MonthlyReportQuery>) -> ViewRes
     let year = params.year.unwrap_or_else(|| chrono::Utc::now().year());
     let month = params.month.unwrap_or_else(|| chrono::Utc::now().month());
 
-    let transactions = get_all_transactions();
-    let categories = get_all_categories();
+    // Fetch from database
+    let transactions = Transaction::objects().all().all().await?;
+    let categories = Category::objects().all().all().await?;
 
     // Create category name lookup
     let category_names: HashMap<i64, String> = categories
         .iter()
-        .map(|c| (c.id, c.name.clone()))
+        .filter_map(|c| c.id.map(|id| (id, c.name.clone())))
         .collect();
 
     // Filter transactions for the specified month
@@ -62,13 +64,13 @@ pub async fn monthly_report(Query(params): Query<MonthlyReportQuery>) -> ViewRes
     // Calculate totals
     let total_income: i64 = monthly_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Income))
+        .filter(|t| t.get_transaction_type() == TransactionType::Income)
         .map(|t| t.amount)
         .sum();
 
     let total_expense: i64 = monthly_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Expense))
+        .filter(|t| t.get_transaction_type() == TransactionType::Expense)
         .map(|t| t.amount)
         .sum();
 
@@ -77,7 +79,7 @@ pub async fn monthly_report(Query(params): Query<MonthlyReportQuery>) -> ViewRes
     let mut expense_by_category: HashMap<i64, (i64, i32)> = HashMap::new();
 
     for t in &monthly_transactions {
-        let map = match t.transaction_type {
+        let map = match t.get_transaction_type() {
             TransactionType::Income => &mut income_by_category,
             TransactionType::Expense => &mut expense_by_category,
         };
@@ -132,7 +134,7 @@ pub async fn monthly_report(Query(params): Query<MonthlyReportQuery>) -> ViewRes
 pub async fn yearly_report(Query(params): Query<YearlyReportQuery>) -> ViewResult<Response> {
     let year = params.year.unwrap_or_else(|| chrono::Utc::now().year());
 
-    let transactions = get_all_transactions();
+    let transactions = Transaction::objects().all().all().await?;
 
     // Filter transactions for the specified year
     let yearly_transactions: Vec<_> = transactions
@@ -143,13 +145,13 @@ pub async fn yearly_report(Query(params): Query<YearlyReportQuery>) -> ViewResul
     // Calculate yearly totals
     let total_income: i64 = yearly_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Income))
+        .filter(|t| t.get_transaction_type() == TransactionType::Income)
         .map(|t| t.amount)
         .sum();
 
     let total_expense: i64 = yearly_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Expense))
+        .filter(|t| t.get_transaction_type() == TransactionType::Expense)
         .map(|t| t.amount)
         .sum();
 
@@ -162,7 +164,7 @@ pub async fn yearly_report(Query(params): Query<YearlyReportQuery>) -> ViewResul
     for t in &yearly_transactions {
         let month = t.transaction_date.month();
         let entry = monthly_data.entry(month).or_insert((0, 0));
-        match t.transaction_type {
+        match t.get_transaction_type() {
             TransactionType::Income => entry.0 += t.amount,
             TransactionType::Expense => entry.1 += t.amount,
         }
@@ -199,13 +201,13 @@ pub async fn by_category_report(Query(params): Query<CategoryReportQuery>) -> Vi
     let start_date = params.start_date;
     let end_date = params.end_date;
 
-    let transactions = get_all_transactions();
-    let categories = get_all_categories();
+    let transactions = Transaction::objects().all().all().await?;
+    let categories = Category::objects().all().all().await?;
 
     // Create category name lookup
     let category_names: HashMap<i64, String> = categories
         .iter()
-        .map(|c| (c.id, c.name.clone()))
+        .filter_map(|c| c.id.map(|id| (id, c.name.clone())))
         .collect();
 
     // Filter transactions by date range if provided
@@ -215,13 +217,13 @@ pub async fn by_category_report(Query(params): Query<CategoryReportQuery>) -> Vi
             let in_range_start = start_date
                 .as_ref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                .map(|d| t.transaction_date >= d)
+                .map(|d| t.transaction_date.date_naive() >= d)
                 .unwrap_or(true);
 
             let in_range_end = end_date
                 .as_ref()
                 .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                .map(|d| t.transaction_date <= d)
+                .map(|d| t.transaction_date.date_naive() <= d)
                 .unwrap_or(true);
 
             in_range_start && in_range_end
@@ -232,7 +234,7 @@ pub async fn by_category_report(Query(params): Query<CategoryReportQuery>) -> Vi
     let mut category_totals: HashMap<i64, (i64, i32, bool)> = HashMap::new();
 
     for t in &filtered_transactions {
-        let is_income = matches!(t.transaction_type, TransactionType::Income);
+        let is_income = t.get_transaction_type() == TransactionType::Income;
         let entry = category_totals
             .entry(t.category_id)
             .or_insert((0, 0, is_income));
@@ -255,13 +257,13 @@ pub async fn by_category_report(Query(params): Query<CategoryReportQuery>) -> Vi
 
     let total_income: i64 = filtered_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Income))
+        .filter(|t| t.get_transaction_type() == TransactionType::Income)
         .map(|t| t.amount)
         .sum();
 
     let total_expense: i64 = filtered_transactions
         .iter()
-        .filter(|t| matches!(t.transaction_type, TransactionType::Expense))
+        .filter(|t| t.get_transaction_type() == TransactionType::Expense)
         .map(|t| t.amount)
         .sum();
 

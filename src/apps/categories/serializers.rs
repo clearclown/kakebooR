@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use validator::Validate;
+
 use super::models::{Category, CategoryType};
 
 /// Request payload for creating a new category
@@ -47,13 +48,16 @@ pub struct CategoryResponse {
 
 impl From<Category> for CategoryResponse {
     fn from(category: Category) -> Self {
+        let category_type = category.get_category_type();
+        let created_at = category.created_at.to_rfc3339();
+
         Self {
-            id: category.id,
+            id: category.id.unwrap_or(0),
             name: category.name,
-            category_type: category.category_type,
+            category_type,
             icon: category.icon,
             color: category.color,
-            created_at: category.created_at.to_rfc3339(),
+            created_at,
         }
     }
 }

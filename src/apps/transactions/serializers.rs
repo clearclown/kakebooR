@@ -1,8 +1,9 @@
 //! Transaction serializers for request/response handling
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-use chrono::NaiveDate;
+
 use super::models::{Transaction, TransactionType};
 
 /// Request payload for creating a new transaction
@@ -16,8 +17,8 @@ pub struct CreateTransactionRequest {
     /// Description or memo (max 500 characters)
     #[validate(length(max = 500, message = "Description must be at most 500 characters"))]
     pub description: String,
-    /// Date of the transaction (YYYY-MM-DD format)
-    pub transaction_date: NaiveDate,
+    /// Date of the transaction (ISO 8601 format)
+    pub transaction_date: DateTime<Utc>,
     /// Type of transaction (income or expense)
     pub transaction_type: TransactionType,
 }
@@ -34,7 +35,7 @@ pub struct UpdateTransactionRequest {
     #[validate(length(max = 500, message = "Description must be at most 500 characters"))]
     pub description: Option<String>,
     /// Date of the transaction (optional)
-    pub transaction_date: Option<NaiveDate>,
+    pub transaction_date: Option<DateTime<Utc>>,
 }
 
 /// Response payload for a transaction
@@ -52,15 +53,20 @@ pub struct TransactionResponse {
 
 impl From<Transaction> for TransactionResponse {
     fn from(transaction: Transaction) -> Self {
+        let transaction_type = transaction.get_transaction_type();
+        let transaction_date = transaction.transaction_date.format("%Y-%m-%d").to_string();
+        let created_at = transaction.created_at.to_rfc3339();
+        let updated_at = transaction.updated_at.to_rfc3339();
+
         Self {
-            id: transaction.id,
+            id: transaction.id.unwrap_or(0),
             amount: transaction.amount,
             category_id: transaction.category_id,
             description: transaction.description,
-            transaction_date: transaction.transaction_date.format("%Y-%m-%d").to_string(),
-            transaction_type: transaction.transaction_type,
-            created_at: transaction.created_at.to_rfc3339(),
-            updated_at: transaction.updated_at.to_rfc3339(),
+            transaction_date,
+            transaction_type,
+            created_at,
+            updated_at,
         }
     }
 }
@@ -74,7 +80,8 @@ pub struct TransactionListResponse {
 
 impl TransactionListResponse {
     pub fn new(transactions: Vec<Transaction>) -> Self {
-        let results: Vec<TransactionResponse> = transactions.into_iter().map(Into::into).collect();
+        let results: Vec<TransactionResponse> =
+            transactions.into_iter().map(Into::into).collect();
         Self {
             count: results.len(),
             results,
@@ -95,13 +102,13 @@ impl TransactionSummary {
     pub fn from_transactions(transactions: &[Transaction]) -> Self {
         let total_income: i64 = transactions
             .iter()
-            .filter(|t| t.transaction_type == TransactionType::Income)
+            .filter(|t| t.get_transaction_type() == TransactionType::Income)
             .map(|t| t.amount)
             .sum();
 
         let total_expense: i64 = transactions
             .iter()
-            .filter(|t| t.transaction_type == TransactionType::Expense)
+            .filter(|t| t.get_transaction_type() == TransactionType::Expense)
             .map(|t| t.amount)
             .sum();
 
